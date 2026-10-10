@@ -1,42 +1,80 @@
+# Comentários de documentação gerados pela Azure (links de referência sobre as actions usadas):
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
 
+# Nome do workflow, exibido na aba "Actions" do GitHub
 name: Build and deploy Python app to Azure Web App - Engsoft-helo
 
+# "on" define os EVENTOS que disparam este workflow
 on:
+  # Dispara automaticamente sempre que houver um push (commit enviado ao GitHub)...
   push:
+    # ...mas apenas nas branches listadas abaixo
     branches:
+      # Só a branch main dispara o deploy automático (é o "CD": entrega contínua)
       - 'main'
+  # Permite também rodar o workflow manualmente pelo botão "Run workflow" na aba Actions
   workflow_dispatch:
 
+# "jobs" agrupa os trabalhos do pipeline; cada job roda numa máquina virtual nova e separada
 jobs:
+  # Primeiro job: "build" (parte de CI) — prepara e empacota a aplicação
   build:
+    # Executa numa máquina virtual Linux (Ubuntu, versão mais recente) fornecida pelo GitHub
     runs-on: ubuntu-latest
+    # Permissões do token automático (GITHUB_TOKEN) dentro deste job
     permissions:
+      # Apenas leitura do repositório — suficiente para o checkout baixar o código
       contents: read #This is required for actions/checkout
 
+    # "steps" é a lista de passos executados em ordem, de cima para baixo
     steps:
+      # Passo 1: baixa (clona) o código do repositório para dentro da máquina virtual
       - uses: actions/checkout@v4
 
+      # Passo NOVO (Exercício 3): só imprime uma mensagem no log, antes do build
+      - name: Mensagem de início
+        # "run" executa um comando no terminal; o echo escreve o texto no console do job
+        run: echo "Iniciando o deploy do meu projeto!"
+
+      # Passo 2: nome que aparece no log para a etapa de instalação do Python
       - name: Set up Python version
+        # Usa a action oficial que instala e configura o Python na máquina
         uses: actions/setup-python@v5
+        # "with" passa parâmetros para a action
         with:
+          # Versão do Python que será instalada
           python-version: '3.14'
 
       # 🛠️ Local Build Section (Optional)
       # The following section in your workflow is designed to catch build issues early on the client side, before deployment. This can be helpful for debugging and validation. However, if this step significantly increases deployment time and early detection is not critical for your workflow, you may remove this section to streamline the deployment process.
+      # (Tradução: esta seção é opcional; ela faz o build já no GitHub para detectar erros
+      #  antes do deploy. Se deixar o deploy lento, pode ser removida.)
+      # Passo 3: nome que aparece no log para criação do ambiente virtual e instalação das dependências
       - name: Create and Start virtual environment and Install dependencies
+        # "|" permite escrever vários comandos, um por linha, executados em sequência
         run: |
+          # Cria um ambiente virtual Python isolado na pasta "antenv"
           python -m venv antenv
+          # Ativa o ambiente virtual, para que o pip instale as bibliotecas dentro dele
           source antenv/bin/activate
+          # Instala as dependências do requirements.txt (Flask e gunicorn); se falhar, o pipeline para aqui
           pip install -r requirements.txt
-                
-      # By default, when you enable GitHub CI/CD integration through the Azure portal, the platform automatically sets the SCM_DO_BUILD_DURING_DEPLOYMENT application setting to true. This triggers the use of Oryx, a build engine that handles application compilation and dependency installation (e.g., pip install) directly on the platform during deployment. Hence, we exclude the antenv virtual environment directory from the deployment artifact to reduce the payload size. 
+
+      # By default, when you enable GitHub CI/CD integration through the Azure portal, the platform automatically sets the SCM_DO_BUILD_DURING_DEPLOYMENT application setting to true. This triggers the use of Oryx, a build engine that handles application compilation and dependency installation (e.g., pip install) directly on the platform during deployment. Hence, we exclude the antenv virtual environment directory from the deployment artifact to reduce the payload size.
+      # (Tradução: a própria Azure, via Oryx, instala as dependências de novo no servidor durante
+      #  o deploy; por isso a pasta antenv NÃO é enviada, deixando o pacote menor.)
+      # Passo 4: nome que aparece no log para o envio dos arquivos
       - name: Upload artifact for deployment jobs
+        # Action oficial que guarda arquivos como "artefato" para outro job poder usar
         uses: actions/upload-artifact@v4
+        # Parâmetros do upload
         with:
+          # Nome do artefato; o job de deploy vai baixá-lo por esse nome
           name: python-app
+          # Arquivos enviados: "." = todo o projeto; "!antenv/" = EXCETO a pasta antenv.
+          # (Não dá para comentar dentro do bloco "|" abaixo, pois ali tudo vira texto literal.)
           path: |
             .
             !antenv/
@@ -45,32 +83,55 @@ jobs:
       # If you prefer to disable the Oryx build process during deployment, follow these steps:
       # 1. Remove the SCM_DO_BUILD_DURING_DEPLOYMENT app setting from your Azure App Service Environment variables.
       # 2. Refer to sample workflows for alternative deployment strategies: https://github.com/Azure/actions-workflow-samples/tree/master/AppService
-      
+      # (Tradução: instruções de como desligar o build automático da Azure, caso desejado.)
 
+
+  # Segundo job: "deploy" (parte de CD) — publica a aplicação no Azure App Service
   deploy:
+    # Também roda numa máquina virtual Ubuntu nova e limpa
     runs-on: ubuntu-latest
+    # Só começa depois que o job "build" terminar com sucesso
     needs: build
+    # Permissões do token neste job
     permissions:
+      # Permite gerar um token JWT (OIDC) para fazer login na Azure sem precisar de senha
       id-token: write #This is required for requesting the JWT
+      # Apenas leitura do repositório
       contents: read #This is required for actions/checkout
 
+    # Passos do job de deploy
     steps:
+      # Passo 1: nome que aparece no log
       - name: Download artifact from build job
+        # Action oficial que baixa o artefato salvo pelo job de build
         uses: actions/download-artifact@v4
+        # Parâmetros do download
         with:
+          # Baixa o artefato chamado "python-app" (os arquivos do projeto)
           name: python-app
-      
+
+      # Passo 2: nome que aparece no log
       - name: Login to Azure
+        # Action oficial que autentica na Azure via OIDC
         uses: azure/login@v2
+        # Credenciais lidas dos "secrets" do repositório (criados pela Azure ao configurar o Deployment Center)
         with:
+          # ID da identidade (aplicação) usada para o login
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_EF820855C8224C9EA1FF043544697AAF }}
+          # ID do tenant (diretório) da conta Azure
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_9AA9DD89F27542A186EDD20B3A082AFB }}
+          # ID da assinatura Azure onde o App Service foi criado
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_2AA36F8FD0CF4CDBA1DEB6CE31BB6ABD }}
 
+      # Passo 3: nome que aparece no log
       - name: 'Deploy to Azure Web App'
+        # Action oficial que envia os arquivos para o App Service e reinicia o site
         uses: azure/webapps-deploy@v3
+        # Identificador do step (permite ler as saídas dele, como a URL publicada)
         id: deploy-to-webapp
+        # Parâmetros do deploy
         with:
+          # Nome do App Service na Azure que vai receber a aplicação
           app-name: 'Engsoft-helo'
+          # Slot de implantação: "Production" é o site principal
           slot-name: 'Production'
-          
